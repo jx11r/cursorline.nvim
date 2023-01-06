@@ -3,8 +3,9 @@ local M = {}
 local create_autocmd = vim.api.nvim_create_autocmd
 local create_augroup = vim.api.nvim_create_augroup
 local timer = vim.loop.new_timer()
-local wo = vim.wo
 local next = next
+local wo = vim.wo
+local tbl_contains = vim.tbl_contains
 
 local options = {
   auto_hide = true,
@@ -54,11 +55,17 @@ function M.setup(opts)
     return
   end
 
+  if vim.o.filetype ~= '' then
+    if not tbl_contains(opts.disabled_filetypes, vim.o.filetype) then
+      show(opts)
+    end
+  end
+
   create_autocmd({ 'BufRead', 'BufWinEnter', 'BufNewFile' }, {
     group = create_augroup('cursorline.nvim', { clear = true }),
     callback = function(e)
       local ft = vim.bo[e.buf].filetype
-      if not vim.tbl_contains(opts.disabled_filetypes, ft) then
+      if not tbl_contains(opts.disabled_filetypes, ft) then
         show(opts)
       end
     end,
