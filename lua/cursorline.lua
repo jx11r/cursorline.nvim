@@ -1,11 +1,9 @@
 local M = {}
 
-local create_autocmd = vim.api.nvim_create_autocmd
-local create_augroup = vim.api.nvim_create_augroup
+local autocmd = vim.api.nvim_create_autocmd
+local augroup = vim.api.nvim_create_augroup
 local timer = vim.loop.new_timer()
-local next = next
 local wo = vim.wo
-local tbl_contains = vim.tbl_contains
 
 local options = {
   auto_hide = true,
@@ -13,23 +11,27 @@ local options = {
   timeout = 1000,
 }
 
-local function auto_hide()
-  create_autocmd({ 'InsertLeave', 'WinEnter' }, {
-    callback = function()
-      wo.cursorline = true
-    end,
-  })
+local function create(opts)
+  local group = augroup('cursorline', { clear = true })
 
-  create_autocmd({ 'InsertEnter', 'WinLeave' }, {
-    callback = function()
-      wo.cursorline = false
-    end,
-  })
-end
+  if opts.auto_hide then
+    autocmd({ 'InsertLeave', 'WinEnter' }, {
+      group = group,
+      callback = function()
+        wo.cursorline = true
+      end,
+    })
 
-local function show(opts)
-  wo.cursorline = true
-  create_autocmd({ 'CursorMoved', 'CursorMovedI' }, {
+    autocmd({ 'InsertEnter', 'WinLeave' }, {
+      group = group,
+      callback = function()
+        wo.cursorline = false
+      end,
+    })
+  end
+
+  return autocmd({ 'CursorMoved', 'CursorMovedI' }, {
+    group = group,
     callback = function()
       wo.cursorline = false
       timer:start(
@@ -41,35 +43,61 @@ local function show(opts)
       )
     end,
   })
+end
 
-  if opts.auto_hide then
-    auto_hide()
-  end
+local function delete(id)
+  vim.cmd [[ autocmd! cursorline ]]
+  vim.api.nvim_set_var(id, nil)
+  timer:start(
+    0,
+    0,
+    vim.schedule_wrap(function()
+      wo.cursorline = false
+    end)
+  )
 end
 
 function M.setup(opts)
   opts = vim.tbl_deep_extend('force', options, opts or {})
+  local group = augroup('cursorline.nvim', { clear = true })
+  local id = 'cursorline.nvim'
+  local status = 'cl.status'
+  vim.api.nvim_set_var(id, nil)
 
-  if not next(opts.disabled_filetypes) then
-    show(opts)
-    return
-  end
+  autocmd('BufEnter', {
+    group = group,
+    callback = function()
+      if pcall(vim.api.nvim_buf_get_var, 0, status) then
+        if vim.api.nvim_get_var(id) then
+          delete(id)
+        end
+        return
+      end
 
-  if vim.o.filetype ~= '' then
-    if not tbl_contains(opts.disabled_filetypes, vim.o.filetype) then
-      show(opts)
-    end
-  end
-
-  create_autocmd({ 'BufRead', 'BufWinEnter', 'BufNewFile' }, {
-    group = create_augroup('cursorline.nvim', { clear = true }),
-    callback = function(e)
-      local ft = vim.bo[e.buf].filetype
-      if not tbl_contains(opts.disabled_filetypes, ft) then
-        show(opts)
+      if not vim.api.nvim_get_var(id) then
+        wo.cursorline = true
+        vim.api.nvim_set_var(id, create(opts))
       end
     end,
   })
+
+  autocmd('FileType', {
+    pattern = opts.disabled_filetypes,
+    group = group,
+    callback = function()
+      vim.api.nvim_buf_set_var(0, status, true)
+      if vim.api.nvim_get_var(id) then
+        delete(id)
+      end
+    end,
+  })
+
+  if not vim.api.nvim_get_var(id) then
+    if not vim.tbl_contains(opts.disabled_filetypes, vim.o.filetype) then
+      wo.cursorline = true
+      vim.api.nvim_set_var(id, create(opts))
+    end
+  end
 end
 
 return M
